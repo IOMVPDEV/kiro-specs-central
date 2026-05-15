@@ -1,0 +1,157 @@
+# Requirements — DynamoDB `{{tableName}}` ({{businessDomain}}/{{serviceDomain}})
+
+## Identification
+
+| Field | Value |
+|-------|-------|
+| Business domain | `{{businessDomain}}` |
+| Service domain | `{{serviceDomain}}` |
+| Table short name | `{{tableName}}` |
+| Project version | `{{versionProject}}` |
+| Owner / squad | `{{owner}}` |
+| Journey | `{{journey}}` |
+| Feature | `{{feature}}` |
+
+**Provisioned table name** (per env):
+```
+dyn-{env}-io-{{businessDomain}}-{{serviceDomain}}-{{tableName}}-{{versionProject}}
+```
+
+## Functional requirements
+
+- **FR-1 (Key schema)**: Partition key `{{hashKeyName}}` ({{hashKeyType}}){{#if hasRangeKey}}, sort key `{{rangeKeyName}}` ({{rangeKeyType}}){{else}} — no sort key (single-item-per-partition access pattern){{/if}}.
+{{#if ttlEnabled}}
+- **FR-2 (TTL)**: Items carry attribute `{{ttlAttributeName}}` (Number, epoch seconds). DynamoDB deletes expired items automatically within 48 h. Attribute is optional per item — absence means no expiry.
+{{/if}}
+{{#if streamEnabled}}
+- **FR-3 (Streams)**: DynamoDB Streams enabled with view type `{{streamViewType}}`. Consumers subscribe via stream ARN published to Parameter Store. At-least-once delivery; consumers must be idempotent.
+{{/if}}
+{{#if enableKinesisDestination}}
+- **FR-4 (Kinesis destination)**: Table replicates change records to a Kinesis Data Stream for analytics / fan-out. Kinesis stream ARN provided by the data platform team. Precision: `MICROSECOND`.
+{{/if}}
+{{#if enableResourcePolicy}}
+- **FR-5 (Cross-account access)**: PCI account `{{pciAccountId}}` must have `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:Query` on this table via resource policy (no VPC or IAM role assumption required).
+{{/if}}
+{{#if (gt gsiCount "0")}}
+- **FR-6 (GSIs)**: {{gsiCount}} Global Secondary Index(es) to support secondary access patterns (see Design). Each GSI must have documented access pattern before provisioning.
+{{/if}}
+{{#if (gt lsiCount "0")}}
+- **FR-7 (LSIs)**: {{lsiCount}} Local Secondary Index(es) on the base partition key. LSIs are immutable after creation — schema must be finalized before first deploy.
+{{/if}}
+
+## Non-functional requirements
+
+- **NFR-1 (Durability)**: Point-in-Time Recovery (PITR) enabled — hardcoded by module. 35-day restore window. Deletion protection `{{deletionProtectionEnabled}}`.
+- **NFR-2 (Capacity)**: Billing mode `{{billingMode}}`.{{#eq billingMode "PROVISIONED"}} Auto-scaling with 70% utilization target on read and write capacity. Define initial capacity per GSI and base table.{{/eq}}
+- **NFR-3 (Encryption)**: Server-side encryption with customer-managed KMS key (`data.aws_kms_key.dynamodb.arn` from shared security account). Key rotation enabled.
+- **NFR-4 (Table class)**: `{{tableClass}}`.{{#eq tableClass "STANDARD_INFREQUENT_ACCESS"}} Access pattern is infrequent; IA class reduces storage cost but increases per-request cost. Validate access frequency assumption.{{/eq}}
+- **NFR-5 (Observability)**: CloudWatch alarms on `UserErrors`, `SystemErrors`, `ThrottledRequests` ≥ 1. Metrics forwarded to central monitoring account.
+- **NFR-6 (Access control)**: Least-privilege IAM. Consumer Lambdas/services granted only the actions they use (`GetItem`, `PutItem`, `UpdateItem`, `Query`, etc.) scoped to table ARN and specific GSI ARNs.
+
+## Constraints
+
+- Module source: `app.terraform.io/IO-BANKING/cloud-dynamodb/module`. Pin to latest certified version.
+- No `dynamodb:Scan` granted to service roles. Operator tooling access only via separate role with audit trail.
+- Item size target ≤ 4 KB. Larger attributes off-loaded to S3; table stores reference key only.
+- LSI schema is immutable. GSI schema (key attributes) is immutable after creation.
+- Cross-account access only via resource policy — no sts:AssumeRole from PCI account to iomvp accounts.
+
+## Acceptance criteria
+
+- [ ] Table deploys to all target environments without error.
+- [ ] Provisioned table name matches convention `dyn-{env}-io-{{businessDomain}}-{{serviceDomain}}-{{tableName}}-{{versionProject}}`.
+- [ ] KMS encryption active (SSE shows CMK ARN in `describe-table` output).
+- [ ] PITR enabled (`describe-continuous-backups` returns `PointInTimeRecoveryStatus: ENABLED`).
+- [ ] Deletion protection `{{deletionProtectionEnabled}}`.
+{{#if ttlEnabled}}
+- [ ] TTL enabled on attribute `{{ttlAttributeName}}` (`describe-time-to-live` returns `TimeToLiveStatus: ENABLED`).
+{{/if}}
+{{#if streamEnabled}}
+- [ ] Stream ARN published to SSM `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/stream-arn`.
+- [ ] Stream view type = `{{streamViewType}}`.
+{{/if}}
+{{#if (gt gsiCount "0")}}
+- [ ] All {{gsiCount}} GSI(s) active and matching agreed key schema.
+{{/if}}
+{{#if enableResourcePolicy}}
+- [ ] Resource policy grants PCI account `{{pciAccountId}}` only `GetItem`, `PutItem`, `Query`. Verified with `get-resource-policy` CLI.
+{{/if}}
+- [ ] Table ARN and name published to SSM (`/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/{table-arn,table-name}`).
+- [ ] Tags present: `BUSINESS-DOMAIN`, `SERVICE-DOMAIN`, `JOURNEY`, `FEATURE`, `REPOSITORY`, `OWNER`.
+- [ ] No CDK Nag / tfsec violations in CI (Terraform plan succeeds clean).
+
+## Open questions
+
+> The Kiro agent must resolve ALL items below before writing any Terraform code. Do not assume values — ask the developer explicitly.
+
+{{#if (gt gsiCount "0")}}
+### GSI schema ({{gsiCount}} index(es) pending)
+
+For each GSI declared, the following must be answered:
+
+{{#times gsiCount}}
+**GSI{{index}}**
+- [ ] Name (e.g. `by-author`): ___
+- [ ] Hash key attribute name + type (S/N/B): ___
+- [ ] Range key attribute name + type (or `null`): ___
+- [ ] Projection type (`ALL` / `KEYS_ONLY` / `INCLUDE`): ___
+- [ ] If `INCLUDE`: which non-key attributes?: ___
+{{#eq billingMode "PROVISIONED"}}
+- [ ] `read_capacity` / `write_capacity`: ___ / ___
+{{/eq}}
+- [ ] Access pattern this GSI serves (one sentence): ___
+
+{{/times}}
+{{/if}}
+{{#if (gt lsiCount "0")}}
+### LSI schema ({{lsiCount}} index(es) pending) ⚠ IMMUTABLE
+
+LSI cannot be changed after table creation. Get explicit sign-off on each.
+
+{{#times lsiCount}}
+**LSI{{index}}**
+- [ ] Name: ___
+- [ ] Range key attribute name + type (S/N/B): ___
+- [ ] Projection type (`ALL` / `KEYS_ONLY` / `INCLUDE`): ___
+- [ ] If `INCLUDE`: which non-key attributes?: ___
+- [ ] Explicit sign-off: *"LSI `<name>` with range key `<attr>` (type `<T>`) is finalized. Proceed."*
+
+{{/times}}
+{{/if}}
+{{#if streamEnabled}}
+### Stream consumer
+
+- [ ] Which Lambda(s) / service(s) consume this stream?
+- [ ] Batch size and tumbling window?
+- [ ] DLQ for failed batches (SQS ARN)?
+- [ ] Idempotency key / strategy?
+- [ ] Event type filter: INSERT only / MODIFY only / REMOVE only / all?
+
+{{/if}}
+{{#eq billingMode "PROVISIONED"}}
+### Provisioned capacity
+
+- [ ] Base table initial `read_capacity`: ___
+- [ ] Base table initial `write_capacity`: ___
+{{#times gsiCount}}
+- [ ] GSI{{index}} `read_capacity` / `write_capacity`: ___ / ___
+{{/times}}
+- [ ] Auto-scaling target utilization (%): ___
+- [ ] Auto-scaling min / max capacity: ___ / ___
+
+{{/eq}}
+{{#if (not (gt gsiCount "0"))}}
+{{#if (not (gt lsiCount "0"))}}
+{{#if (not streamEnabled)}}
+{{#eq billingMode "PAY_PER_REQUEST"}}
+*No open schema questions for this table. Proceed with implementation.*
+{{/eq}}
+{{/if}}
+{{/if}}
+{{/if}}
+
+## Out of scope
+
+- Application-level data migration.
+- DynamoDB global tables / cross-region replication.
+- DynamoDB Accelerator (DAX).

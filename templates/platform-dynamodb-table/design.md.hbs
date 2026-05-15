@@ -1,0 +1,239 @@
+# Design — DynamoDB `{{tableName}}` ({{businessDomain}}/{{serviceDomain}})
+
+{{> terraform-naming}}
+
+## Key schema
+
+| Attribute | Type | Role |
+|-----------|------|------|
+| `{{hashKeyName}}` | {{hashKeyType}} | Partition key (hash_key) |
+{{#if hasRangeKey}}
+| `{{rangeKeyName}}` | {{rangeKeyType}} | Sort key (range_key) |
+{{/if}}
+{{#if ttlEnabled}}
+| `{{ttlAttributeName}}` | N | TTL (epoch seconds, optional per item) |
+{{/if}}
+
+> **Complete the attributes list** — add every attribute referenced by a GSI or LSI key below, with its type (S/N/B). Only key attributes need to be declared in the `attributes` block of the Terraform module.
+
+| Additional attributes for indexes | Type |
+|-----------------------------------|------|
+| *(add rows as needed)* | S/N/B |
+
+## Access patterns
+
+> Fill this table before implementing. Each row must map to base table or a specific GSI/LSI. Reject new GSI requests without a documented access pattern.
+
+| # | Pattern description | Index used | Key condition | Filter expression |
+|---|---------------------|------------|---------------|-------------------|
+| 1 | Get single item by id | base | `{{hashKeyName}} = :val{{#if hasRangeKey}} AND {{rangeKeyName}} = :val{{/if}}` | — |
+{{#times gsiCount}}
+| {{add index 1}} | *(describe access pattern for GSI{{index}})* | GSI{{index}} | `gsi{{index}}_pk = :val` | *(optional)* |
+{{/times}}
+{{#times lsiCount}}
+| *(LSI{{index}} pattern)* | LSI{{index}} | `{{hashKeyName}} = :val AND lsi{{index}}_sk ...` | — |
+{{/times}}
+
+## Global Secondary Indexes ({{gsiCount}})
+
+{{#eq gsiCount "0"}}
+None. All access patterns served by the base table.
+{{/eq}}
+{{#times gsiCount}}
+
+### GSI{{index}} — *(name: fill in, e.g. `by-author`)*
+
+| Property | Value |
+|----------|-------|
+| `name` | `*(e.g. by-attribute-name)*` |
+| `hash_key` | *(attribute name)* |
+| `range_key` | *(attribute name or null)* |
+| `projection_type` | `ALL` / `KEYS_ONLY` / `INCLUDE` |
+| `read_capacity` | *(only if PROVISIONED, e.g. 2)* |
+| `write_capacity` | *(only if PROVISIONED, e.g. 2)* |
+| `non_key_attributes` | *(list, only if INCLUDE projection)* |
+
+Access pattern served: *(describe)*.
+{{/times}}
+
+## Local Secondary Indexes ({{lsiCount}})
+
+{{#eq lsiCount "0"}}
+None.
+{{/eq}}
+{{#times lsiCount}}
+
+### LSI{{index}} — *(name: fill in)*
+
+| Property | Value |
+|----------|-------|
+| `name` | *(e.g. by-created-at)* |
+| `range_key` | *(attribute name — must use same hash_key as base table)* |
+| `projection_type` | `ALL` / `KEYS_ONLY` / `INCLUDE` |
+| `non_key_attributes` | *(list, only if INCLUDE)* |
+
+> ⚠ LSI schema is **immutable**. Finalize before first deploy. Changing requires table recreation.
+{{/times}}
+
+## Terraform module block
+
+`terraform/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}/main.tf`
+
+```hcl
+module "{{businessDomain}}-{{serviceDomain}}-{{tableName}}" {
+  source  = "app.terraform.io/IO-BANKING/cloud-dynamodb/module"
+  version = "0.0.17"   # pin to latest certified
+
+  # Identity
+  env             = var.env
+  project_name    = var.project_name
+  business_domain = var.business_domain
+  service_domain  = var.service_domain
+  version_project = var.version_project
+  owner           = var.owner
+  journey         = "{{journey}}"
+  feature         = "{{feature}}"
+  repository      = "${var.project_name}-${var.business_domain}-${var.service_domain}-platform-${var.version_project}"
+
+  # Table
+  name         = "{{tableName}}"
+  billing_mode = "{{billingMode}}"
+  table_class  = "{{tableClass}}"
+  hash_key     = "{{hashKeyName}}"
+{{#if hasRangeKey}}
+  range_key    = "{{rangeKeyName}}"
+{{/if}}
+
+  # Security
+  dynamo_kms_arn              = data.aws_kms_key.dynamodb.arn
+  deletion_protection_enabled = {{deletionProtectionEnabled}}
+
+  # TTL
+{{#if ttlEnabled}}
+  ttl_attribute_name = "{{ttlAttributeName}}"
+{{else}}
+  # ttl_attribute_name = null  # TTL disabled
+{{/if}}
+
+  # Streams
+{{#if streamEnabled}}
+  stream_enabled   = true
+  stream_view_type = "{{streamViewType}}"
+{{else}}
+  stream_enabled   = false
+{{/if}}
+
+  # Attributes — declare every attribute referenced in a key (base or index)
+  attributes = [
+    { name = "{{hashKeyName}}", type = "{{hashKeyType}}" },
+{{#if hasRangeKey}}
+    { name = "{{rangeKeyName}}", type = "{{rangeKeyType}}" },
+{{/if}}
+    # Add GSI/LSI key attributes below — one entry per attribute name
+  ]
+
+{{#if (gt gsiCount "0")}}
+  global_secondary_indexes = [
+{{#times gsiCount}}
+    {
+      name            = "by-<attribute>"           # GSI{{index}}: fill in
+      hash_key        = "<gsi{{index}}_pk_attr>"
+      range_key       = "<gsi{{index}}_sk_attr>"   # set to null if no SK
+      projection_type = "ALL"
+      read_capacity   = null                       # null = PAY_PER_REQUEST
+      write_capacity  = null
+    },
+{{/times}}
+  ]
+{{/if}}
+
+{{#if (gt lsiCount "0")}}
+  local_secondary_indexes = [
+{{#times lsiCount}}
+    {
+      name            = "by-<attribute>"   # LSI{{index}}: fill in
+      range_key       = "<lsi{{index}}_sk_attr>"
+      projection_type = "ALL"
+    },
+{{/times}}
+  ]
+{{/if}}
+
+{{#if enableResourcePolicy}}
+  enable_dynamodb_resource_policy = true
+  pci_account_id                  = "{{pciAccountId}}"
+{{/if}}
+
+{{#if enableKinesisDestination}}
+  enable_kinesis_streaming_destination         = true
+  kinesis_stream_arn                           = data.aws_ssm_parameter.kinesis_stream_arn.value
+  approximate_creation_date_time_precision     = "MICROSECOND"
+{{/if}}
+}
+```
+
+## Data sources required
+
+`terraform/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}/data.tf`
+
+```hcl
+data "aws_kms_key" "dynamodb" {
+  key_id = "alias/io-${var.env}-dynamodb"
+}
+{{#if enableKinesisDestination}}
+
+data "aws_ssm_parameter" "kinesis_stream_arn" {
+  name = "/io/${var.env}/{{businessDomain}}/{{serviceDomain}}/kinesis-stream-arn"
+}
+{{/if}}
+```
+
+## SSM outputs to publish
+
+After provisioning, export via SSM (output.tf → SSM write or Parameter Store data source):
+
+| Parameter | Value |
+|-----------|-------|
+| `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/table-name` | `module.*.main.name` |
+| `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/table-arn` | `module.*.main.arn` |
+{{#if streamEnabled}}
+| `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/stream-arn` | `module.*.main.stream_arn` |
+{{/if}}
+
+## IAM — consumer permissions
+
+Consumers (Lambdas, ECS tasks) receive **only** the actions they need. Never grant `dynamodb:*`.
+
+| Consumer | Actions | Scope |
+|----------|---------|-------|
+| *(service name)* | `GetItem, PutItem, UpdateItem, Query` | table ARN + GSI ARNs |
+| *(read-only service)* | `GetItem, Query` | table ARN + GSI ARNs |
+
+{{#if enableResourcePolicy}}
+## Cross-account resource policy (PCI)
+
+PCI account `{{pciAccountId}}` granted via `aws_dynamodb_resource_policy`:
+- `dynamodb:GetItem`
+- `dynamodb:PutItem`
+- `dynamodb:Query`
+
+Scope: table ARN only. **No** GSI access, no `UpdateItem`, no `DeleteItem` (requires explicit justification + security approval).
+{{/if}}
+
+## Observability
+
+- CloudWatch alarms: `UserErrors >= 1`, `SystemErrors >= 1`, `ThrottledRequests >= 1` on table + each GSI. Forward to SNS `alerts-{env}`.
+{{#eq billingMode "PROVISIONED"}}
+- Additional alarms: `ConsumedReadCapacityUnits > 80%` of provisioned, `ConsumedWriteCapacityUnits > 80%` of provisioned.
+{{/eq}}
+- Dashboard widgets: item count, table size, consumed read/write capacity, throttled requests.
+
+## Variables needed in platform repo
+
+Add to `terraform/variables.auto.tfvars` (or already inherited from `common.tf`):
+- `business_domain`, `service_domain`, `project_name`, `version_project`, `owner` — global vars.
+- `deletion_protection_enabled` — per-environment override (false in dev/qa, true in prod).
+- `ttl_attribute_name` — `"{{#if ttlEnabled}}{{ttlAttributeName}}{{else}}null{{/if}}"`.
+{{#if enableResourcePolicy}}
+- `pci_account` — injected from Terraform Cloud workspace variables (secret).
+{{/if}}

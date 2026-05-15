@@ -1,0 +1,8 @@
+### CDK stack pattern
+
+- One stack per bounded responsibility. Stacks live in `infra/lib/`.
+- Constructs in `infra/lib/constructs/` are reusable. Stack only wires constructs + outputs.
+- Cross-stack references via SSM Parameter Store (`/iomvp/{{env}}/{service}/{key}`), not direct `Fn::ImportValue`.
+- Tags on every stack: `Project`, `Environment`, `Owner`, `CostCenter`.
+- CDK Nag in CI: fail on `AwsSolutions-*` violations unless suppressed with documented reason.
+- Synth-time validation: `cdk synth` + `cdk diff` mandatory in PR checks.

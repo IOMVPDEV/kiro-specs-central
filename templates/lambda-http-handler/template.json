@@ -1,0 +1,19 @@
+{
+  "name": "lambda-http-handler",
+  "description": "HTTP Lambda behind API Gateway with Middy + Hexagonal architecture",
+  "category": "lambda",
+  "vars": [
+    { "name": "featureName", "prompt": "Feature name (kebab-case, e.g. create-user):", "type": "string", "required": true },
+    { "name": "httpMethod", "prompt": "HTTP method:", "type": "select", "choices": ["GET", "POST", "PUT", "DELETE", "PATCH"], "default": "POST" },
+    { "name": "resourcePath", "prompt": "Resource path (e.g. /users or /users/{id}):", "type": "string", "required": true },
+    { "name": "authRequired", "prompt": "Requires authorization (Cognito/JWT)?", "type": "boolean", "default": true },
+    { "name": "persistsToDynamo", "prompt": "Persists to DynamoDB?", "type": "boolean", "default": true },
+    { "name": "publishesEvent", "prompt": "Publishes domain event (EventBridge)?", "type": "boolean", "default": false },
+    { "name": "env", "prompt": "Default environment:", "type": "select", "choices": ["dev", "qa", "prod"], "default": "dev" }
+  ],
+  "files": [
+    { "src": "requirements.md.hbs", "dest": ".kiro/specs/{{featureName}}/requirements.md" },
+    { "src": "design.md.hbs", "dest": ".kiro/specs/{{featureName}}/design.md" },
+    { "src": "tasks.md.hbs", "dest": ".kiro/specs/{{featureName}}/tasks.md" }
+  ]
+}

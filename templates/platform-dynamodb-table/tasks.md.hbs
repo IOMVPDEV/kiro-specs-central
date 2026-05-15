@@ -1,0 +1,113 @@
+# Tasks — DynamoDB `{{tableName}}` ({{businessDomain}}/{{serviceDomain}})
+
+## Phase 1: Schema design (do before any code)
+
+- [ ] Complete access-pattern table in `design.md` — every read and write pattern documented.
+- [ ] Confirm base key `{{hashKeyName}}` ({{hashKeyType}}){{#if hasRangeKey}} + `{{rangeKeyName}}` ({{rangeKeyType}}){{/if}} covers pattern #1 without an index.
+{{#if (gt gsiCount "0")}}
+- [ ] Define each GSI key schema (name, hash_key, range_key, projection_type) in `design.md` GSI table. Each GSI approved by tech lead before proceeding.
+{{/if}}
+{{#if (gt lsiCount "0")}}
+- [ ] Define each LSI key schema in `design.md`. Get sign-off — LSI is **immutable** after table creation.
+{{/if}}
+- [ ] Confirm all attribute names and types for the `attributes` block (only key attributes declared in module).
+- [ ] Decide `projection_type` per GSI: prefer `KEYS_ONLY` or `INCLUDE` over `ALL` for large items or wide tables. Document chosen attributes for `INCLUDE` projection.
+{{#eq billingMode "PROVISIONED"}}
+- [ ] Define initial `read_capacity` and `write_capacity` per GSI. Set auto-scaling policy target (70%).
+{{/eq}}
+- [ ] Schema design review with tech lead ✓
+
+## Phase 2: Terraform module — directory setup
+
+- [ ] Create directory `terraform/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}/`.
+- [ ] Create `main.tf` with module block (copy scaffold from `design.md`). Fill in all `*(fill in)*` placeholders.
+- [ ] Create `data.tf` with `aws_kms_key` data source{{#if enableKinesisDestination}} and Kinesis stream SSM data source{{/if}}.
+- [ ] Create `variables.tf` declaring all inputs inherited from `common.tf` + module-specific overrides.
+- [ ] Create `output.tf` exposing `table_name`, `table_arn`{{#if streamEnabled}}, `stream_arn`{{/if}} for SSM writes.
+- [ ] Wire the module to `terraform/principal.tf` (if applicable).
+
+## Phase 3: Module configuration
+
+- [ ] Set `name = "{{tableName}}"`.
+- [ ] Set `billing_mode = "{{billingMode}}"` and `table_class = "{{tableClass}}"`.
+- [ ] Set key schema: `hash_key = "{{hashKeyName}}"{{#if hasRangeKey}}`, `range_key = "{{rangeKeyName}}"{{/if}}`.
+- [ ] Populate `attributes` block — one entry per unique key attribute across base table, GSIs, and LSIs.
+{{#if ttlEnabled}}
+- [ ] Set `ttl_attribute_name = "{{ttlAttributeName}}"`.
+{{/if}}
+{{#if streamEnabled}}
+- [ ] Set `stream_enabled = true`, `stream_view_type = "{{streamViewType}}"`.
+{{/if}}
+- [ ] Set `deletion_protection_enabled = var.deletion_protection_enabled`.
+- [ ] Set `dynamo_kms_arn = data.aws_kms_key.dynamodb.arn`.
+{{#if (gt gsiCount "0")}}
+- [ ] Populate `global_secondary_indexes` block — {{gsiCount}} GSI(s) per agreed schema.
+{{/if}}
+{{#if (gt lsiCount "0")}}
+- [ ] Populate `local_secondary_indexes` block — {{lsiCount}} LSI(s) per agreed schema.
+{{/if}}
+{{#if enableResourcePolicy}}
+- [ ] Set `enable_dynamodb_resource_policy = true`, `pci_account_id = var.pci_account`.
+- [ ] Verify PCI account variable injected from Terraform Cloud workspace variables (not hardcoded).
+{{/if}}
+{{#if enableKinesisDestination}}
+- [ ] Set `enable_kinesis_streaming_destination = true`, `kinesis_stream_arn = data.aws_ssm_parameter.kinesis_stream_arn.value`.
+- [ ] Confirm Kinesis stream exists and ARN is in Parameter Store before applying.
+{{/if}}
+
+## Phase 4: Tags
+
+Verify the following tags are populated correctly in the deployed table:
+
+- [ ] `BUSINESS-DOMAIN = {{businessDomain}}`
+- [ ] `SERVICE-DOMAIN = {{serviceDomain}}`
+- [ ] `JOURNEY = {{journey}}`
+- [ ] `FEATURE = {{feature}}`
+- [ ] `REPOSITORY = io-{{businessDomain}}-{{serviceDomain}}-platform-{{versionProject}}`
+- [ ] `OWNER = {{owner}}`
+
+## Phase 5: SSM outputs
+
+- [ ] Publish `table-name` to `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/table-name`.
+- [ ] Publish `table-arn` to `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/table-arn`.
+{{#if streamEnabled}}
+- [ ] Publish `stream-arn` to `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/stream-arn`.
+{{/if}}
+- [ ] Verify consumer services can resolve SSM parameters at Lambda init time.
+
+## Phase 6: IAM consumer policies
+
+- [ ] Identify all consumers (Lambda functions, ECS tasks, other services).
+- [ ] Grant each consumer only the DynamoDB actions it uses (no wildcards).
+- [ ] Scope IAM policies to table ARN + specific GSI ARNs only.
+{{#if enableResourcePolicy}}
+- [ ] Confirm resource policy scope: PCI account `{{pciAccountId}}` — `GetItem`, `PutItem`, `Query` only. Review with security team.
+{{/if}}
+
+## Phase 7: Observability
+
+- [ ] CloudWatch alarm: `UserErrors >= 1` on table.
+- [ ] CloudWatch alarm: `SystemErrors >= 1` on table.
+- [ ] CloudWatch alarm: `ThrottledRequests >= 1` on table and each GSI.
+{{#eq billingMode "PROVISIONED"}}
+- [ ] Alarm: `ConsumedReadCapacityUnits > 80%` of provisioned.
+- [ ] Alarm: `ConsumedWriteCapacityUnits > 80%` of provisioned.
+{{/eq}}
+- [ ] Dashboard widget for this table added to service platform dashboard.
+
+## Phase 8: Validation & promotion
+
+- [ ] `terraform plan` clean in CI (no diff after apply).
+- [ ] Deploy to `dev`. Verify: table name, PITR, KMS, tags, TTL status, deletion protection.
+{{#if streamEnabled}}
+- [ ] Verify stream ARN in SSM and stream status = ENABLED.
+{{/if}}
+{{#if enableResourcePolicy}}
+- [ ] Run `get-resource-policy` CLI and confirm PCI account policy correct.
+{{/if}}
+{{#if enableKinesisDestination}}
+- [ ] Verify Kinesis destination status = ACTIVE via `describe-kinesis-streaming-destination`.
+{{/if}}
+- [ ] Promote to `qa`. Run integration tests that exercise all access patterns.
+- [ ] Promote to `prod`. Verify `deletion_protection_enabled = true`.
+- [ ] Document restore procedure in team runbook (PITR restore + smoke test steps).

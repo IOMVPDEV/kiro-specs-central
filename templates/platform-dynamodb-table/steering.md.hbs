@@ -1,0 +1,134 @@
+---
+inclusion: always
+---
+
+# Schema rules — `dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}`
+
+These rules govern how the agent approaches any implementation task related to this DynamoDB table. Read and apply before writing any Terraform code or filling any placeholder.
+
+## Core principle
+
+**Schema decisions for DynamoDB are permanent or expensive to change. Always ask. Never assume.**
+
+The following must be explicitly confirmed by the developer before proceeding. If the answer is missing, blocked, or unclear — stop and ask.
+
+---
+
+## Mandatory questions — ask before every implementation task
+
+### Base key schema
+
+Before touching any Terraform file, confirm:
+
+- [ ] Hash key (partition key): name = `{{hashKeyName}}`, type = `{{hashKeyType}}`. **Is this confirmed final?**
+{{#if hasRangeKey}}
+- [ ] Range key (sort key): name = `{{rangeKeyName}}`, type = `{{rangeKeyType}}`. **Is this confirmed final?**
+{{else}}
+- [ ] No range key declared. **Is the access pattern PK-only? Confirm no range key is needed.**
+{{/if}}
+
+If either key is wrong, the table must be destroyed and recreated. Confirm explicitly before applying.
+
+---
+
+{{#if (gt gsiCount "0")}}
+### GSI schema ({{gsiCount}} GSI(s) declared — details pending)
+
+For **each** GSI placeholder in `design.md`, ask the developer the following questions. Do not fill in placeholder values (`*(fill in)*`) without explicit answers.
+
+**Questions to ask per GSI:**
+
+1. **Name**: What is the GSI name? (naming convention: `by-<attribute>`, e.g. `by-author`, `by-status-date`)
+2. **Hash key**: Which attribute? What type (S / N / B)? Is it a new attribute or already declared in the base key?
+3. **Range key**: Is there a range key? If yes — which attribute and type?
+4. **Projection type**: `ALL`, `KEYS_ONLY`, or `INCLUDE`?
+   - If `INCLUDE`: which specific non-key attributes should be projected?
+   - Warn: `ALL` increases storage cost and write amplification; use only when query must return full item.
+5. **Access pattern**: What specific query does this GSI serve? Add a row to the access-pattern table in `design.md` before implementing.
+{{#eq billingMode "PROVISIONED"}}
+6. **Capacity**: `read_capacity` and `write_capacity` (number). What is the expected peak RPS?
+{{/eq}}
+
+**Do not create a GSI until every field above is answered for that GSI.**
+
+GSI key attributes are immutable after creation. A wrong attribute name requires a new GSI and removal of the old one (with potential data re-indexing delay).
+
+{{/if}}
+{{#if (gt lsiCount "0")}}
+### LSI schema ({{lsiCount}} LSI(s) declared — details pending)
+
+⚠ **CRITICAL: LSI schema is completely immutable after table creation.** A wrong LSI requires dropping and recreating the table. Do not proceed until schema is signed off.
+
+For each LSI placeholder in `design.md`, ask:
+
+1. **Name**: LSI name (convention: `by-<sk-attribute>`).
+2. **Range key attribute**: Name and type (S / N / B). Must be different from the base range key.
+3. **Projection type**: `ALL`, `KEYS_ONLY`, or `INCLUDE`? If `INCLUDE`, which attributes?
+4. **Access pattern**: Describe the query this LSI serves. Add to design.md access-pattern table.
+5. **Explicit sign-off**: Say exactly: *"LSI `<name>` with range key `<attr>` (type `<T>`) is finalized and cannot be changed. Proceed."*
+
+Do not create an LSI without the explicit sign-off phrase above.
+
+{{/if}}
+{{#if streamEnabled}}
+### Stream consumer configuration
+
+Streams are enabled (`stream_view_type = {{streamViewType}}`). Before any consumer is implemented, ask:
+
+1. **Consumer service(s)**: Which Lambda(s) or service(s) will consume this stream?
+2. **Batch size and window**: What batch size and tumbling window should the event source mapping use?
+3. **Error handling**: DLQ for failed batches? Which SQS queue?
+4. **Idempotency**: How will the consumer handle duplicate delivery (at-least-once)? What is the idempotency key?
+5. **Filtering**: Should the event source mapping filter event types (INSERT / MODIFY / REMOVE)? Which?
+
+Stream ARN is published to SSM: `/io/{env}/{{businessDomain}}/{{serviceDomain}}/{{tableName}}/stream-arn`. Confirm consumer reads from SSM, not hardcoded ARN.
+
+{{/if}}
+{{#if enableKinesisDestination}}
+### Kinesis streaming destination
+
+`enable_kinesis_streaming_destination = true`. Before applying:
+
+1. **Kinesis stream ARN**: Confirm it exists and is in SSM at `/io/{env}/{{businessDomain}}/{{serviceDomain}}/kinesis-stream-arn`.
+2. **Precision**: Defaulting to `MICROSECOND`. Does the analytics team require `MILLISECOND` instead?
+3. **Consumer impact**: Kinesis fan-out adds write latency. Confirm acceptable with team.
+
+Do not enable Kinesis destination if the stream does not exist yet — `terraform apply` will fail.
+
+{{/if}}
+{{#eq billingMode "PROVISIONED"}}
+### Provisioned capacity
+
+Billing mode is `PROVISIONED`. Before applying:
+
+1. **Base table**: `read_capacity` and `write_capacity` (initial values)?
+2. **Per GSI**: Separate `read_capacity` and `write_capacity` per GSI?
+3. **Auto-scaling**: Target utilization (recommend 70%)? Min/max capacity bounds?
+
+Do not use default values (e.g. 5 RCU / 5 WCU) without explicit confirmation — under-provisioning causes throttling; over-provisioning wastes cost.
+
+{{/eq}}
+
+---
+
+## Naming and tag validation
+
+Before `terraform apply`, verify:
+
+- Table name will be: `dyn-{env}-io-{{businessDomain}}-{{serviceDomain}}-{{tableName}}-{{versionProject}}`
+- Tags match: `BUSINESS-DOMAIN={{businessDomain}}`, `SERVICE-DOMAIN={{serviceDomain}}`, `JOURNEY={{journey}}`, `FEATURE={{feature}}`, `OWNER={{owner}}`
+
+If any tag differs from the value above, ask the developer before proceeding.
+
+---
+
+## What to do when a placeholder is found
+
+If you find `*(fill in)*`, `*(describe)*`, or `*(attribute name)*` in `design.md`:
+
+1. **Stop**. Do not guess or invent a value.
+2. Quote the exact placeholder to the developer.
+3. Ask the specific questions listed in this file for that placeholder type.
+4. Wait for explicit answer.
+5. Update `design.md` with the confirmed value.
+6. Proceed only after design.md is updated.

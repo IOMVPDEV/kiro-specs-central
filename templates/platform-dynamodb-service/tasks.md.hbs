@@ -1,0 +1,81 @@
+# Tasks — DynamoDB tables (`{{businessDomain}}/{{serviceDomain}}`)
+
+## Phase 1: Schema sign-off (ALL tables — do before any code)
+
+- [ ] Complete access-pattern table in `design.md` for every table.
+- [ ] Confirm base key schema per table (any wrong key = table recreation).
+{{#each tables}}
+{{#if (gt this.gsiCount "0")}}
+- [ ] Table `{{this.name}}`: get explicit approval on all {{this.gsiCount}} GSI(s) key schema.
+{{/if}}
+{{/each}}
+- [ ] Tech lead schema review ✓ before proceeding.
+
+---
+
+{{#each tables}}
+## Table {{this.index}}: `dyn-{env}-io-{{../businessDomain}}-{{../serviceDomain}}-{{this.name}}-{{../versionProject}}`
+
+### Terraform setup
+
+- [ ] Create `terraform/dyn-{{../businessDomain}}-{{../serviceDomain}}-{{this.name}}/` directory.
+- [ ] `main.tf`: module block with hash_key `{{this.hashKey}}`{{#if this.hasRangeKey}}, range_key `{{this.rangeKey}}`{{/if}}.
+- [ ] `data.tf`: `aws_kms_key.dynamodb` data source.
+- [ ] `variables.tf`: declare all inputs from `common.tf` + any table-specific overrides.
+- [ ] `output.tf`: expose `table_name`, `table_arn`{{#if this.streamEnabled}}, `stream_arn`{{/if}}.
+{{#if this.ttlEnabled}}
+- [ ] TTL attribute: `{{this.ttlAttr}}`.
+{{/if}}
+{{#if this.streamEnabled}}
+- [ ] Streams: `stream_enabled = true`, `stream_view_type = "{{this.streamViewType}}"`.
+{{/if}}
+{{#if (gt this.gsiCount "0")}}
+- [ ] Populate `global_secondary_indexes` — {{this.gsiCount}} GSI(s) per agreed schema.
+- [ ] Add all GSI key attributes to `attributes` block.
+{{/if}}
+{{#if this.resourcePolicy}}
+- [ ] Resource policy: PCI account `{{this.pciAccount}}` — `GetItem, PutItem, Query` only.
+- [ ] Verify PCI account comes from Terraform Cloud workspace variable (not hardcoded).
+{{/if}}
+
+### SSM outputs
+
+- [ ] Publish `/io/{env}/{{../businessDomain}}/{{../serviceDomain}}/{{this.name}}/table-name`.
+- [ ] Publish `/io/{env}/{{../businessDomain}}/{{../serviceDomain}}/{{this.name}}/table-arn`.
+{{#if this.streamEnabled}}
+- [ ] Publish `/io/{env}/{{../businessDomain}}/{{../serviceDomain}}/{{this.name}}/stream-arn`.
+{{/if}}
+
+### Validation
+
+- [ ] `terraform plan` clean.
+- [ ] Deploy `dev`: verify name, KMS, PITR, tags, deletion protection.
+{{#if this.ttlEnabled}}
+- [ ] `describe-time-to-live` returns `ENABLED` for `{{this.ttlAttr}}`.
+{{/if}}
+{{#if this.streamEnabled}}
+- [ ] Stream status `ENABLED`, ARN in SSM.
+{{/if}}
+{{#if this.resourcePolicy}}
+- [ ] `get-resource-policy` confirms correct PCI account scope.
+{{/if}}
+
+---
+
+{{/each}}
+
+## Shared: Observability
+
+- [ ] CloudWatch alarms per table: `UserErrors ≥ 1`, `SystemErrors ≥ 1`, `ThrottledRequests ≥ 1`.
+{{#each tables}}
+{{#if (gt this.gsiCount "0")}}
+- [ ] Alarms per GSI of `{{this.name}}`: `ThrottledRequests ≥ 1`.
+{{/if}}
+{{/each}}
+- [ ] Dashboard widgets for all tables (item count, size, consumed capacity).
+
+## Shared: Promotion
+
+- [ ] Promote all tables to `qa`. Integration tests exercise all access patterns.
+- [ ] Promote all tables to `prod`. Confirm `deletion_protection_enabled = true` on all.
+- [ ] Runbook entry: PITR restore procedure for each table.

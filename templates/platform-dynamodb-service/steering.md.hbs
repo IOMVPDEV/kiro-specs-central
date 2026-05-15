@@ -1,0 +1,104 @@
+---
+inclusion: always
+---
+
+# Schema rules — DynamoDB (`{{businessDomain}}/{{serviceDomain}}`)
+
+Applies to **all {{tableCount}} table(s)** in this service. Read before writing any Terraform code.
+
+## Core rule
+
+**DynamoDB schema is permanent or expensive to change. Always ask. Never assume.**
+
+If an answer is missing or unclear — stop and ask before proceeding.
+
+---
+
+## Tables in scope
+
+{{#each tables}}
+| Table {{this.index}} | `dyn-{env}-io-{{../businessDomain}}-{{../serviceDomain}}-{{this.name}}-{{../versionProject}}` |
+{{/each}}
+
+---
+
+## Mandatory questions before any implementation
+
+### Base key schema — confirm before first `terraform apply`
+
+{{#each tables}}
+**Table `{{this.name}}`**
+- [ ] Hash key `{{this.hashKey}}` ({{this.hashKeyType}}) — confirmed final?
+{{#if this.hasRangeKey}}
+- [ ] Range key `{{this.rangeKey}}` ({{this.rangeKeyType}}) — confirmed final?
+{{else}}
+- [ ] No range key — confirmed no sort key needed?
+{{/if}}
+
+{{/each}}
+
+Wrong key = table must be destroyed and recreated. Get explicit confirmation before applying.
+
+---
+
+{{#each tables}}
+{{#if (gt this.gsiCount "0")}}
+### Table `{{this.name}}` — GSI schema ({{this.gsiCount}} pending)
+
+Do not fill `*(fill in)*` placeholders without explicit answers. Ask per GSI:
+
+1. **Name** — convention `by-<attribute>` (e.g. `by-author`, `by-status-date`).
+2. **Hash key** — attribute name + type (S/N/B). New attribute or already in base key?
+3. **Range key** — attribute name + type, or `null`?
+4. **Projection type** — `ALL` / `KEYS_ONLY` / `INCLUDE`?
+   - If `INCLUDE`: which non-key attributes?
+   - Warn on `ALL`: increases storage + write amplification.
+5. **Access pattern** — one sentence. Add to `design.md` access-pattern table before implementing.
+
+GSI key attributes are immutable after creation. Wrong attribute = new GSI + data re-index delay.
+
+{{/if}}
+{{#if this.streamEnabled}}
+### Table `{{this.name}}` — stream consumer ({{this.streamViewType}})
+
+Before implementing any consumer, ask:
+
+1. Which Lambda(s) / service(s) consume this stream?
+2. Batch size and tumbling window?
+3. DLQ SQS ARN for failed batches?
+4. Idempotency key / strategy?
+5. Event type filter: INSERT / MODIFY / REMOVE — which subset?
+
+Stream ARN in SSM: `/io/{env}/{{../businessDomain}}/{{../serviceDomain}}/{{this.name}}/stream-arn`. Consumer must read from SSM — no hardcoded ARNs.
+
+{{/if}}
+{{#if this.resourcePolicy}}
+### Table `{{this.name}}` — PCI resource policy
+
+PCI account `{{this.pciAccount}}` gets `GetItem`, `PutItem`, `Query` only.
+Before applying: confirm this account ID with the security team. Do not use hardcoded account ID — read from Terraform Cloud workspace variable `pci_account`.
+
+{{/if}}
+{{/each}}
+
+---
+
+## When a placeholder `*(fill in)*` is found
+
+1. **Stop** — do not guess or invent a value.
+2. Quote the exact placeholder and the table it belongs to.
+3. Ask the specific questions listed above for that placeholder type.
+4. Update `design.md` with the confirmed value.
+5. Proceed only after `design.md` is updated.
+
+---
+
+## Naming validation
+
+Before `terraform apply`, confirm table names match:
+
+{{#each tables}}
+- `dyn-{env}-io-{{../businessDomain}}-{{../serviceDomain}}-{{this.name}}-{{../versionProject}}`
+{{/each}}
+
+Tags on all tables: `BUSINESS-DOMAIN={{businessDomain}}`, `SERVICE-DOMAIN={{serviceDomain}}`, `JOURNEY={{journey}}`, `FEATURE={{feature}}`, `OWNER={{owner}}`.

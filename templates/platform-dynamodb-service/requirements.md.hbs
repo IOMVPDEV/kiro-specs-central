@@ -1,0 +1,98 @@
+# Requirements — DynamoDB tables (`{{businessDomain}}/{{serviceDomain}}`)
+
+## Service identification
+
+| Field | Value |
+|-------|-------|
+| Business domain | `{{businessDomain}}` |
+| Service domain  | `{{serviceDomain}}` |
+| Owner / squad   | `{{owner}}` |
+| Journey         | `{{journey}}` |
+| Feature         | `{{feature}}` |
+| Version         | `{{versionProject}}` |
+| Tables          | {{tableCount}} |
+
+**Table name pattern**: `dyn-{env}-io-{{businessDomain}}-{{serviceDomain}}-{tableName}-{{versionProject}}`
+
+---
+
+## Tables summary
+
+| # | Table | Hash key | Range key | GSIs | Streams | TTL | PCI policy |
+|---|-------|----------|-----------|------|---------|-----|------------|
+{{#each tables}}
+| {{this.index}} | `{{this.name}}` | `{{this.hashKey}}` ({{this.hashKeyType}}) | {{#if this.hasRangeKey}}`{{this.rangeKey}}` ({{this.rangeKeyType}}){{else}}—{{/if}} | {{this.gsiCount}} | {{#if this.streamEnabled}}✓{{else}}—{{/if}} | {{#if this.ttlEnabled}}`{{this.ttlAttr}}`{{else}}—{{/if}} | {{#if this.resourcePolicy}}✓{{else}}—{{/if}} |
+{{/each}}
+
+---
+
+## Per-table functional requirements
+
+{{#each tables}}
+### Table {{this.index}}: `dyn-{env}-io-{{../businessDomain}}-{{../serviceDomain}}-{{this.name}}-{{../versionProject}}`
+
+- **FR-{{this.index}}.1**: Hash key `{{this.hashKey}}` ({{this.hashKeyType}}){{#if this.hasRangeKey}}, range key `{{this.rangeKey}}` ({{this.rangeKeyType}}){{else}} — no range key{{/if}}.
+{{#if this.ttlEnabled}}
+- **FR-{{this.index}}.2**: TTL attribute `{{this.ttlAttr}}` (Number, epoch seconds). Optional per item — absence means no expiry.
+{{/if}}
+{{#if this.streamEnabled}}
+- **FR-{{this.index}}.3**: DynamoDB Streams enabled (`{{this.streamViewType}}`). Consumers must be idempotent (at-least-once delivery).
+{{/if}}
+{{#if (gt this.gsiCount "0")}}
+- **FR-{{this.index}}.4**: {{this.gsiCount}} GSI(s) — schema pending (see Open Questions). Each GSI requires a documented access pattern before provisioning.
+{{/if}}
+{{#if this.resourcePolicy}}
+- **FR-{{this.index}}.5**: Cross-account resource policy grants PCI account `{{this.pciAccount}}` `GetItem`, `PutItem`, `Query`. No `UpdateItem`, `DeleteItem` without explicit security approval.
+{{/if}}
+
+{{/each}}
+
+---
+
+## Non-functional requirements (all tables)
+
+- **NFR-1 (Durability)**: PITR enabled (hardcoded in module). Deletion protection configured per table.
+- **NFR-2 (Encryption)**: Customer-managed KMS key `alias/io-{env}-dynamodb`. Key rotation on.
+- **NFR-3 (Access)**: Least-privilege IAM per consumer. No `dynamodb:*`. No `dynamodb:Scan` for services.
+- **NFR-4 (Observability)**: CloudWatch alarms on `UserErrors`, `SystemErrors`, `ThrottledRequests` ≥ 1 per table + per GSI.
+- **NFR-5 (Outputs)**: All table ARNs, names{{#each tables}}{{#if this.streamEnabled}}, stream ARNs{{/if}}{{/each}} published to SSM Parameter Store under `/io/{env}/{{businessDomain}}/{{serviceDomain}}/`.
+
+---
+
+## Open questions
+
+> The Kiro agent must resolve **all items below** before writing any Terraform code. Do not assume — ask explicitly.
+
+{{#each tables}}
+{{#if (gt this.gsiCount "0")}}
+### Table `{{this.name}}` — GSI schema ({{this.gsiCount}} GSI(s) pending)
+
+{{#times this.gsiCount}}
+**GSI{{this.index}}** for table `{{../name}}`
+- [ ] Name (e.g. `by-author`): ___
+- [ ] Hash key attribute — name + type (S/N/B): ___
+- [ ] Range key attribute — name + type, or `null`: ___
+- [ ] Projection type (`ALL` / `KEYS_ONLY` / `INCLUDE`): ___
+- [ ] If `INCLUDE`: which non-key attributes?: ___
+- [ ] Access pattern served (one sentence): ___
+
+{{/times}}
+{{/if}}
+{{#if this.streamEnabled}}
+### Table `{{this.name}}` — stream consumer
+
+- [ ] Which Lambda(s) / service(s) consume this stream?
+- [ ] Batch size and tumbling window?
+- [ ] DLQ for failed batches (SQS ARN)?
+- [ ] Idempotency key / strategy?
+- [ ] Event type filter: INSERT / MODIFY / REMOVE — which?
+
+{{/if}}
+{{/each}}
+{{#each tables}}{{/each}}
+
+## Out of scope
+
+- Application-level data migrations.
+- DynamoDB global tables / cross-region replication.
+- DynamoDB Accelerator (DAX).

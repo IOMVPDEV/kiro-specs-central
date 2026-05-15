@@ -1,0 +1,8 @@
+### Hexagonal layers
+
+- **Domain** (`src/domain/`): entities, value objects, domain errors. Zero infra deps.
+- **Application** (`src/application/`): use cases, ports (interfaces), DTOs. Depends only on `domain`.
+- **Infrastructure** (`src/infrastructure/`): adapters (AWS SDK clients, repositories), DI container (Inversify), Middy middleware, Lambda handlers.
+- **Composition root**: `src/composition/container.ts` binds ports to adapters via Inversify symbols in `src/composition/symbols.ts`.
+
+Dependency rule: outer → inner only. `domain` knows nothing about `infrastructure`.

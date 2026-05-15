@@ -1,0 +1,179 @@
+{
+  "name": "platform-dynamodb-table",
+  "description": "DynamoDB table via io-module-cloud-dynamodb Terraform module (platform repos)",
+  "category": "platform",
+  "vars": [
+    {
+      "name": "businessDomain",
+      "prompt": "Business domain (e.g. sale, pay, risk):",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "serviceDomain",
+      "prompt": "Service domain (e.g. custmr-offer, trx-auth):",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "tableName",
+      "prompt": "Table short name (e.g. events, view, state):",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "owner",
+      "prompt": "Owner / squad name (e.g. trinity):",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "journey",
+      "prompt": "Journey tag (e.g. checkout, onboarding):",
+      "type": "string",
+      "default": "default-journey"
+    },
+    {
+      "name": "feature",
+      "prompt": "Feature tag (e.g. offer-creation):",
+      "type": "string",
+      "default": "default-feature"
+    },
+    {
+      "name": "versionProject",
+      "prompt": "Project version (e.g. 01, 02):",
+      "type": "string",
+      "default": "01"
+    },
+    {
+      "name": "hashKeyName",
+      "prompt": "Hash key (partition key) attribute name:",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "hashKeyType",
+      "prompt": "Hash key attribute type:",
+      "type": "select",
+      "choices": ["S", "N", "B"],
+      "default": "S"
+    },
+    {
+      "name": "hasRangeKey",
+      "prompt": "Has range key (sort key)?",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "name": "rangeKeyName",
+      "prompt": "Range key attribute name:",
+      "type": "string",
+      "when": { "var": "hasRangeKey", "equals": true }
+    },
+    {
+      "name": "rangeKeyType",
+      "prompt": "Range key attribute type:",
+      "type": "select",
+      "choices": ["S", "N", "B"],
+      "default": "S",
+      "when": { "var": "hasRangeKey", "equals": true }
+    },
+    {
+      "name": "billingMode",
+      "prompt": "Billing mode:",
+      "type": "select",
+      "choices": ["PAY_PER_REQUEST", "PROVISIONED"],
+      "default": "PAY_PER_REQUEST"
+    },
+    {
+      "name": "tableClass",
+      "prompt": "Table class:",
+      "type": "select",
+      "choices": ["STANDARD", "STANDARD_INFREQUENT_ACCESS"],
+      "default": "STANDARD"
+    },
+    {
+      "name": "deletionProtectionEnabled",
+      "prompt": "Enable deletion protection? (recommend true for prod)",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "name": "ttlEnabled",
+      "prompt": "Enable TTL?",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "name": "ttlAttributeName",
+      "prompt": "TTL attribute name:",
+      "type": "string",
+      "default": "expireAt",
+      "when": { "var": "ttlEnabled", "equals": true }
+    },
+    {
+      "name": "streamEnabled",
+      "prompt": "Enable DynamoDB Streams?",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "name": "streamViewType",
+      "prompt": "Stream view type:",
+      "type": "select",
+      "choices": ["NEW_AND_OLD_IMAGES", "NEW_IMAGE", "OLD_IMAGE", "KEYS_ONLY"],
+      "default": "NEW_AND_OLD_IMAGES",
+      "when": { "var": "streamEnabled", "equals": true }
+    },
+    {
+      "name": "gsiCount",
+      "prompt": "Number of Global Secondary Indexes (GSIs):",
+      "type": "select",
+      "choices": ["0", "1", "2", "3", "4", "5"],
+      "default": "0"
+    },
+    {
+      "name": "lsiCount",
+      "prompt": "Number of Local Secondary Indexes (LSIs, requires range key):",
+      "type": "select",
+      "choices": ["0", "1", "2", "3"],
+      "default": "0"
+    },
+    {
+      "name": "enableResourcePolicy",
+      "prompt": "Enable cross-account DynamoDB resource policy (PCI account access)?",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "name": "pciAccountId",
+      "prompt": "PCI AWS account ID:",
+      "type": "string",
+      "when": { "var": "enableResourcePolicy", "equals": true }
+    },
+    {
+      "name": "enableKinesisDestination",
+      "prompt": "Enable Kinesis Data Streams destination (for fan-out / analytics)?",
+      "type": "boolean",
+      "default": false
+    }
+  ],
+  "files": [
+    {
+      "src": "requirements.md.hbs",
+      "dest": ".kiro/specs/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}/requirements.md"
+    },
+    {
+      "src": "design.md.hbs",
+      "dest": ".kiro/specs/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}/design.md"
+    },
+    {
+      "src": "tasks.md.hbs",
+      "dest": ".kiro/specs/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}/tasks.md"
+    },
+    {
+      "src": "steering.md.hbs",
+      "dest": ".kiro/steering/dyn-{{businessDomain}}-{{serviceDomain}}-{{tableName}}.md"
+    }
+  ]
+}

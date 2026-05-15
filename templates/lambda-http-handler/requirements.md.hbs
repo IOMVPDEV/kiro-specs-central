@@ -1,0 +1,56 @@
+# Requirements — {{pascal featureName}}
+
+## Overview
+
+HTTP Lambda exposing `{{httpMethod}} {{resourcePath}}` behind API Gateway. Implements use case `{{pascal featureName}}UseCase` following hexagonal architecture.
+
+## Functional requirements
+
+- **FR-1**: Endpoint `{{httpMethod}} {{resourcePath}}` accepts a JSON payload (for POST/PUT/PATCH) or path/query params (for GET/DELETE) and returns a JSON response.
+- **FR-2**: Request body validated against JSON Schema at the handler boundary. Invalid payload → 400 with `code` and `message`.
+{{#if authRequired}}
+- **FR-3**: Endpoint requires a valid bearer token. Caller identity (`sub`, `scope`) extracted from authorizer context and passed to the use case.
+{{else}}
+- **FR-3**: Endpoint is unauthenticated (public). Rate-limited at API Gateway usage plan.
+{{/if}}
+{{#if persistsToDynamo}}
+- **FR-4**: Use case persists state to DynamoDB. Writes are conditional and idempotent (no duplicate side-effects on retry).
+{{/if}}
+{{#if publishesEvent}}
+- **FR-5**: On successful state change, publish domain event `{{pascal featureName}}Completed` to EventBridge bus `iomvp-{{env}}` with detail-type `{{pascal featureName}}Completed` and source `iomvp.{{kebab featureName}}`.
+{{/if}}
+
+## Non-functional requirements
+
+- **NFR-1 (Latency)**: p99 end-to-end ≤ 500 ms (warm). Cold start ≤ 1.5 s using Node 20 runtime + ESM.
+- **NFR-2 (Availability)**: 99.9% monthly. Multi-AZ via managed services. Lambda reserved concurrency = N (define per env).
+- **NFR-3 (Security)**: All secrets via Secrets Manager / Parameter Store SecureString. No env-vars containing secrets. IAM least-privilege per resource.
+- **NFR-4 (Observability)**: Structured logs (powertools), X-Ray tracing, EMF metrics. Correlation id propagated end-to-end.
+- **NFR-5 (Cost)**: Lambda memory profiled; pick smallest tier that meets latency SLO. Log retention 30d in non-prod, 90d in prod.
+
+## Constraints
+
+- Runtime: Node 20.x, TypeScript strict, ESM modules, bundler: esbuild via CDK NodejsFunction.
+- Architecture: hexagonal (ports & adapters), DI via Inversify.
+- Framework: Middy v5 for HTTP middleware composition.
+{{#if authRequired}}
+- Auth: APIGW Lambda authorizer or Cognito User Pool authorizer (decide in design).
+{{/if}}
+
+## Acceptance criteria
+
+- [ ] Happy path returns the expected status and JSON body.
+- [ ] Validation failure returns 400 with structured error.
+{{#if authRequired}}
+- [ ] Missing/invalid token returns 401.
+{{/if}}
+- [ ] Domain errors mapped to correct HTTP status codes per `error-handling`.
+- [ ] Correlation id present in every log line for a single request.
+- [ ] CDK Nag passes with zero unsuppressed findings.
+- [ ] Unit tests ≥95% coverage on domain + application.
+
+## Out of scope
+
+- UI / frontend.
+- Cross-region replication.
+- Batch / async processing of the same operation.

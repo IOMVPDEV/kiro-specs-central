@@ -1,0 +1,7 @@
+### Testing strategy
+
+- **Unit tests** (Jest + `jest-mock-extended`): cover domain (100%), application use cases (≥95%), adapters with mocked SDK clients. No real AWS calls.
+- **Integration tests**: `aws-sdk-client-mock` for SDK v3 clients. Test repository adapters end-to-end against mocked responses.
+- **Contract tests**: validate input/output shapes against OpenAPI / JSON Schema for any cross-service boundary.
+- **Coverage gates**: `--coverage` with thresholds in `jest.config.ts` (branches ≥95, functions ≥95, lines ≥95, statements ≥95).
+- **No fixtures coupling**: factories in `tests/factories/` produce valid domain objects; tests construct what they need.

@@ -1,0 +1,6 @@
+### Observability
+
+- **Logging**: `@aws-lambda-powertools/logger` with structured JSON. Inject correlation id from APIGW request id or `x-correlation-id` header. Mask PII fields (`email`, `document`, `phone`).
+- **Tracing**: `@aws-lambda-powertools/tracer` + AWS X-Ray. Annotate domain operations and external calls.
+- **Metrics**: `@aws-lambda-powertools/metrics` (EMF). Emit `BusinessKPI` namespace; dimensions `Service`, `Operation`, `Environment`.
+- **Alarms**: CloudWatch alarms on `Errors >= 1`, `Throttles >= 1`, p99 latency over SLO. SNS topic `alerts-{{env}}`.

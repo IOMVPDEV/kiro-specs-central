@@ -1,0 +1,19 @@
+### Terraform module + naming convention
+
+All resources provisioned via Terraform module `IO-BANKING/cloud-dynamodb/module` (Terraform Cloud private registry). Pin to latest stable version.
+
+**Table name pattern** (standard, `is_infrastructure = false`):
+
+```
+{prefix_table_name}-{env}-{project_name}-{business_domain}-{service_domain}-{name}-{version_project}
+```
+
+Example: `dyn-prod-io-sale-custmr-offer-events-01`
+
+**Repository tag pattern**: `{project_name}-{business_domain}-{service_domain}-platform-{version_project}`
+
+Example: `io-sale-custmr-offer-platform-01`
+
+**KMS key**: always provided via Terraform data source `data.aws_kms_key.dynamodb.arn`. Key alias lives in the shared platform / security account. Never create a new KMS key inside this module.
+
+**PITR**: hardcoded enabled inside the module. No variable needed.

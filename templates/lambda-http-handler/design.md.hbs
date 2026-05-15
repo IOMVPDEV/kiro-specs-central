@@ -1,0 +1,125 @@
+# Design — {{pascal featureName}}
+
+## Architecture
+
+{{> hex-layers}}
+
+## Components
+
+### Handler (infrastructure)
+
+`src/infrastructure/handlers/{{kebab featureName}}.handler.ts`
+
+```ts
+export const handler = middy(baseHandler)
+  .use(httpEventNormalizer())
+  .use(httpJsonBodyParser())
+  .use(validator({ eventSchema }))
+  .use(correlationIdMiddleware())
+  .use(loggerMiddleware())
+  .use(tracerMiddleware())
+  .use(metricsMiddleware())
+  .use(httpErrorHandler());
+```
+
+- Resolves `{{pascal featureName}}UseCase` from the Inversify container.
+- Maps APIGW event → input DTO. Maps use case result → APIGW response.
+
+### Use case (application)
+
+`src/application/use-cases/{{kebab featureName}}.use-case.ts`
+
+```ts
+@injectable()
+export class {{pascal featureName}}UseCase {
+  constructor(
+{{#if persistsToDynamo}}
+    @inject(SYMBOLS.{{upper (snake featureName)}}_REPOSITORY)
+    private readonly repository: {{pascal featureName}}Repository,
+{{/if}}
+{{#if publishesEvent}}
+    @inject(SYMBOLS.EVENT_PUBLISHER)
+    private readonly publisher: EventPublisher,
+{{/if}}
+  ) {}
+
+  async execute(input: {{pascal featureName}}Input): Promise<{{pascal featureName}}Output> {
+    // 1. validate domain invariants
+    // 2. orchestrate domain entities
+{{#if persistsToDynamo}}
+    // 3. persist via repository (conditional write)
+{{/if}}
+{{#if publishesEvent}}
+    // 4. publish domain event
+{{/if}}
+    // 5. return output DTO
+  }
+}
+```
+
+### Ports (application)
+
+{{#if persistsToDynamo}}
+- `{{pascal featureName}}Repository` — `findById`, `save`, plus access patterns required.
+{{/if}}
+{{#if publishesEvent}}
+- `EventPublisher` — `publish(event: DomainEvent): Promise<void>`.
+{{/if}}
+
+### Adapters (infrastructure)
+
+{{#if persistsToDynamo}}
+- `Dynamo{{pascal featureName}}Repository` — implements port using `@aws-sdk/lib-dynamodb` `DynamoDBDocumentClient`. Single-table design; PK/SK strategy defined in companion `platform-dynamodb-table` spec.
+{{/if}}
+{{#if publishesEvent}}
+- `EventBridgeEventPublisher` — implements `EventPublisher` using `@aws-sdk/client-eventbridge`. Batches up to 10 entries per `PutEvents` call.
+{{/if}}
+
+## API contract
+
+- **Endpoint**: `{{httpMethod}} {{resourcePath}}`
+{{#if authRequired}}
+- **Auth**: `Authorization: Bearer <jwt>`. APIGW authorizer validates and injects `requestContext.authorizer.claims`.
+{{/if}}
+- **Request schema**: `src/infrastructure/handlers/schemas/{{kebab featureName}}.request.schema.json`
+- **Response schema**: `src/infrastructure/handlers/schemas/{{kebab featureName}}.response.schema.json`
+- **Status codes**: 200/201 on success, 400/401/404/409/500 per error mapping.
+
+{{> error-handling}}
+
+{{> observability}}
+
+## Infrastructure (CDK)
+
+{{> cdk-stack-pattern}}
+
+Stack: `{{pascal featureName}}Stack` in `infra/lib/{{kebab featureName}}.stack.ts`.
+
+Resources:
+- `NodejsFunction` for the Lambda (Node 20, ARM64, bundled with esbuild, source maps on).
+- APIGW route on shared REST/HTTP API (imported via SSM).
+{{#if persistsToDynamo}}
+- IAM policy: `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:Query` on the shared table only.
+{{/if}}
+{{#if publishesEvent}}
+- IAM policy: `events:PutEvents` on bus `iomvp-{{env}}` only.
+{{/if}}
+- Log group with explicit retention.
+
+## Configuration
+
+- Env vars: `LOG_LEVEL`, `POWERTOOLS_SERVICE_NAME=iomvp-{{kebab featureName}}`, `TABLE_NAME` (if applicable), `EVENT_BUS_NAME` (if applicable).
+- All non-secret config from Parameter Store at deploy time (CDK SSM lookups).
+
+## Sequence (happy path)
+
+1. Client → APIGW → Lambda.
+2. Middy chain: normalize → parse body → validate → inject correlation id.
+3. Handler resolves use case from DI container.
+4. Use case executes business logic.
+5. Handler maps result → APIGW response with `200`/`201`.
+{{#if publishesEvent}}
+6. Event published asynchronously after persistence succeeds.
+{{/if}}
+
+{{> testing-strategy}}

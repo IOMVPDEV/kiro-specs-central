@@ -1,0 +1,60 @@
+# Tasks — {{pascal featureName}}
+
+## Phase 1: Domain
+
+- [ ] Define entity `src/domain/{{kebab featureName}}/{{pascal featureName}}.ts` with invariants enforced in constructor / factory.
+- [ ] Define value objects required by the entity.
+- [ ] Define domain errors extending `DomainError` (e.g. `{{pascal featureName}}NotFoundError`, `{{pascal featureName}}ValidationError`).
+- [ ] Unit tests for entity invariants and domain error paths (100% coverage).
+
+## Phase 2: Application
+
+- [ ] Define input/output DTOs `src/application/dto/{{kebab featureName}}.dto.ts`.
+{{#if persistsToDynamo}}
+- [ ] Define port `src/application/ports/{{pascal featureName}}Repository.ts`.
+{{/if}}
+{{#if publishesEvent}}
+- [ ] Define port `src/application/ports/EventPublisher.ts` (or reuse shared).
+- [ ] Define domain event `{{pascal featureName}}Completed`.
+{{/if}}
+- [ ] Implement use case `{{pascal featureName}}UseCase` with `@injectable`.
+- [ ] Unit tests for use case with `jest-mock-extended` mocks of ports (≥95% coverage, all branches).
+
+## Phase 3: Infrastructure adapters
+
+{{#if persistsToDynamo}}
+- [ ] Implement `Dynamo{{pascal featureName}}Repository` using `DynamoDBDocumentClient`.
+- [ ] Integration tests with `aws-sdk-client-mock`.
+{{/if}}
+{{#if publishesEvent}}
+- [ ] Implement `EventBridgeEventPublisher`.
+- [ ] Tests verifying event detail shape + source/detail-type.
+{{/if}}
+- [ ] DI bindings in `src/composition/container.ts` + symbols in `src/composition/symbols.ts`.
+
+## Phase 4: Handler
+
+- [ ] Implement `src/infrastructure/handlers/{{kebab featureName}}.handler.ts` with Middy chain.
+- [ ] Request/response JSON Schemas in `schemas/`.
+- [ ] Handler tests: validation failure, auth failure, success, mapped domain errors.
+
+## Phase 5: CDK infrastructure
+
+- [ ] Create `{{pascal featureName}}Stack`.
+- [ ] Wire `NodejsFunction` with least-privilege IAM.
+- [ ] Add APIGW route `{{httpMethod}} {{resourcePath}}`{{#if authRequired}} with authorizer{{/if}}.
+- [ ] CloudWatch alarms (errors, throttles, p99 latency).
+- [ ] CDK Nag suppressions documented (if any).
+- [ ] `cdk synth` + `cdk diff` clean in CI.
+
+## Phase 6: Observability + ops
+
+- [ ] Dashboard widget for this endpoint in the service dashboard.
+- [ ] Runbook entry: common errors + remediation.
+- [ ] Log-based metric filters if needed.
+
+## Phase 7: Release
+
+- [ ] Smoke test in `dev`.
+- [ ] Promote to `qa`; run contract tests.
+- [ ] Promote to `prod` behind feature flag (if applicable).
