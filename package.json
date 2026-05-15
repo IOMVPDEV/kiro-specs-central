@@ -16,13 +16,16 @@
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "lint": "tsc --noEmit",
     "test": "jest",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "pnpm run clean && pnpm run build",
+    "version-packages": "changeset version",
+    "publish-packages": "pnpm run build && changeset publish"
   },
   "dependencies": {
     "commander": "^12.1.0",
@@ -38,6 +41,7 @@
     "url": "https://github.com/IOMVPDEV/kiro-specs-central.git"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.5.0",
     "jest": "^29.7.0",

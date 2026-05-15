@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create GitHub Releases + push version commits
+      pull-requests: write # open/update "Version Packages" PR
+      packages: write      # publish to GitHub Packages
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history needed so changesets can detect changed packages
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          # Points npm/pnpm to GitHub Packages for @iomvpdev scope on publish
+          registry-url: https://npm.pkg.github.com
+          scope: "@iomvpdev"
+
+      - run: pnpm install --frozen-lockfile
+
+      # How this works:
+      #   - If unmerged changesets exist on main → opens/updates "Version Packages" PR
+      #     that bumps versions and updates CHANGELOG.md files.
+      #   - If the "Version Packages" PR is merged → publishes changed packages
+      #     to GitHub Packages and creates GitHub Releases.
+      - name: Create Release PR or Publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm run version-packages
+          publish: pnpm run publish-packages
+          commit: 'chore: release packages'
+          title: 'chore: release packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

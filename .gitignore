@@ -6,3 +6,4 @@ coverage
 .kiro
 .idea
 .npmrc.local
+package-lock.json
