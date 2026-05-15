@@ -30,6 +30,13 @@
     "inquirer": "^10.2.2",
     "kleur": "^4.1.5"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IOMVPDEV/kiro-specs-central.git"
+  },
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.5.0",
